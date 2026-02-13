@@ -9,7 +9,7 @@ st.set_page_config(page_title="Sistema Escolar", layout="wide")
 # Função de Conexão Segura
 @st.cache_resource
 def conectar_google_sheets():
-    # Aqui pegamos a senha dos "Segredos" do Streamlit, não do arquivo json
+    # Aqui pegamos a senha dos "Segredos" do Streamlit
     credenciais_dict = st.secrets["gcp_service_account"]
     
     scopes = [
@@ -30,18 +30,25 @@ def main():
         gc = conectar_google_sheets()
         
         # Tenta abrir a planilha CADASTROS
-        # ATENÇÃO: O nome do arquivo no código deve ser EXATAMENTE igual ao do Drive
         sh_cadastros = gc.open("CADASTROS") 
         ws_prof = sh_cadastros.worksheet("CADASTRO_PROF")
         
         # Mostra que conectou
         st.success("Conexão com CADASTROS realizada com sucesso!")
         
-        # Lê os dados
-       # Lê os dados brutos, aceitando colunas vazias
-dados = ws_prof.get_all_values()
-# Usa a primeira linha como cabeçalho
-df_professores = pd.DataFrame(dados[1:], columns=dados[0])
+        # --- CORREÇÃO APLICADA AQUI ---
+        # Em vez de get_all_records (que exige cabeçalhos perfeitos),
+        # usamos get_all_values para ler tudo como texto bruto.
+        dados_brutos = ws_prof.get_all_values()
+        
+        # A primeira linha (índice 0) é o cabeçalho
+        cabecalho = dados_brutos[0]
+        # O restante (do índice 1 em diante) são os dados
+        dados_linhas = dados_brutos[1:]
+        
+        # Criamos a tabela (DataFrame) manualmente
+        df_professores = pd.DataFrame(dados_linhas, columns=cabecalho)
+        # -------------------------------
         
         # Filtros
         st.sidebar.header("Opções")
@@ -66,14 +73,24 @@ df_professores = pd.DataFrame(dados[1:], columns=dados[0])
                         # Abre a planilha individual
                         sh_ind = gc.open_by_url(link)
                         ws_mes = sh_ind.worksheet(mes)
-                        registros = ws_mes.get_all_records()
                         
-                        for reg in registros:
-                            reg['Professor'] = prof
-                            dados_consolidados.append(reg)
+                        # Mesma lógica para ler as planilhas individuais (evita erro de coluna vazia lá também)
+                        dados_ind = ws_mes.get_all_values()
+                        if len(dados_ind) > 1:
+                            cabecalho_ind = dados_ind[0]
+                            # Limpa espaços em branco dos cabeçalhos para evitar erros
+                            cabecalho_ind = [c.strip() for c in cabecalho_ind]
+                            
+                            registros = []
+                            for linha in dados_ind[1:]:
+                                # Cria um dicionário combinando cabeçalho com a linha
+                                reg = dict(zip(cabecalho_ind, linha))
+                                reg['Professor'] = prof
+                                dados_consolidados.append(reg)
                             
                     except Exception as e:
-                        st.warning(f"Não foi possível ler dados de {prof}. Verifique se a aba '{mes}' existe.")
+                        # Apenas avisa no console do servidor, não para o código
+                        print(f"Erro em {prof}: {e}")
             
             bar.empty()
             
@@ -84,13 +101,13 @@ df_professores = pd.DataFrame(dados[1:], columns=dados[0])
                 
                 # Botão de Download
                 csv = df_final.to_csv(index=False).encode('utf-8')
-                st.download_button("Baixar CSV", csv, "relatorio.csv", "text/csv")
+                st.download_button("Baixar CSV", csv, f"relatorio_{mes}.csv", "text/csv")
             else:
-                st.warning("Nenhum dado encontrado.")
+                st.warning(f"Nenhum dado encontrado ou erro ao ler as abas de '{mes}'. Verifique se o nome da aba nas planilhas dos professores está exatamente igual.")
                 
     except Exception as e:
-        st.error(f"Erro de conexão: {e}")
-        st.info("Verifique se compartilhou a planilha CADASTROS com o email do robô.")
+        st.error(f"Erro Geral: {e}")
+        st.info("Dica: Verifique se o nome da aba na planilha CADASTROS é realmente 'CADASTRO_PROF'.")
 
 if __name__ == "__main__":
     main()
