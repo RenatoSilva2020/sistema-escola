@@ -38,7 +38,10 @@ def main():
         st.success("Conexão com CADASTROS realizada com sucesso!")
         
         # Lê os dados
-        df_professores = pd.DataFrame(ws_prof.get_all_records())
+       # Lê os dados brutos, aceitando colunas vazias
+dados = ws_prof.get_all_values()
+# Usa a primeira linha como cabeçalho
+df_professores = pd.DataFrame(dados[1:], columns=dados[0])
         
         # Filtros
         st.sidebar.header("Opções")
